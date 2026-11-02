@@ -42,14 +42,23 @@ add_worktree() {
   fi
   if git show-ref --verify --quiet "refs/heads/${branch}"; then
     git worktree add "${path}" "${branch}"
+  elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+    git worktree add --track -b "${branch}" "${path}" "origin/${branch}"
   else
     git worktree add -b "${branch}" "${path}" HEAD
   fi
 }
 
+# A teammate may already have pushed the live board. Start from it, not from main.
+if git remote get-url origin >/dev/null 2>&1; then
+  git fetch --quiet origin coord 2>/dev/null || true
+fi
+
 add_worktree "${MAIN}/.worktrees/coord" "coord"
+# Desk branches are desk/<role>, not agent/<role>: git cannot hold both
+# agent/backend and the task branches agent/backend/<id>.
 for role in orchestrator frontend backend platform; do
-  add_worktree "${MAIN}/.worktrees/${role}" "agent/${role}"
+  add_worktree "${MAIN}/.worktrees/${role}" "desk/${role}"
   printf '%s\n' "${role}" > "${MAIN}/.worktrees/${role}/.hackathon-role"
 done
 
