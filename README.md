@@ -46,6 +46,12 @@ flowchart TD
   orch -->|marks done, then merge| main
 ```
 
+## Write the agent files first
+
+Before setup, fill in `PROJECT.md` (pitch, stack, install / dev / test / deploy commands, file map) and give each `agents/<role>.md` its paths, its limits, its part of the click path, a definition of done, when to stop for a human, and a timebox. `AGENTS.md` and `CLAUDE.md` hold the shared rules and usually stay as they are. Commit, then run setup, so every worktree starts with the filled-in files.
+
+[docs/agent-md-guide.md](docs/agent-md-guide.md) has each section with a short example, a template to copy, and filled examples for the orchestrator and the backend desk.
+
 ## Start here
 
 From a git repo that already has one commit (this one, or your app after you copy these files in):
@@ -168,6 +174,7 @@ Requires `git` and `python3`. No pip packages. Shell scripts are bash (macOS, Li
 | `AGENTS.md` | Rules Codex, Cursor, and Hermes load. Claude loads them too. |
 | `CLAUDE.md` | Claude Code entry. Points at `AGENTS.md`. |
 | `agents/*.md` | The four role prompts. |
+| `docs/agent-md-guide.md` | What to write in the agent files, with a template and two filled examples. |
 | `.claude/agents/*.md` | The same desks as Claude Code subagents. |
 | `.claude/skills/job-board/` | Skill for board and outbox commands. |
 | `.cursor/rules/hackathon-desk.mdc` | Cursor rule that points at the same contract. |
