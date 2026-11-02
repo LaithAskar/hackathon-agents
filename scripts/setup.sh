@@ -14,10 +14,6 @@ if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "warning: uncommitted changes are not copied into new worktrees. Commit first, then re-run setup." >&2
-fi
-
 # When setup is launched from inside a desk, ROOT is that desk. Always operate
 # on the main checkout that owns .git.
 COMMON="$(git rev-parse --git-common-dir)"
@@ -26,6 +22,21 @@ if [[ "${COMMON}" != /* ]]; then
 fi
 MAIN="$(dirname "${COMMON}")"
 cd "${MAIN}"
+
+# A desk folder deleted by hand stays registered until pruned.
+git worktree prune
+
+missing=0
+for name in coord orchestrator frontend backend platform; do
+  [[ -e "${MAIN}/.worktrees/${name}/.git" ]] || missing=1
+done
+# New worktrees start from the last commit, and re-running setup does not update existing ones.
+if [[ "${missing}" -eq 1 ]] && { ! git diff --quiet || ! git diff --cached --quiet; }; then
+  echo "Uncommitted changes in ${MAIN} would not reach the new worktrees:" >&2
+  git status --short --untracked-files=no >&2
+  echo "Commit them (or stash them), then re-run scripts/setup.sh." >&2
+  exit 1
+fi
 
 mkdir -p "${MAIN}/.worktrees"
 
