@@ -197,8 +197,14 @@ def save_board(path: Path, rows: list[dict[str, str]]) -> None:
 
 def lock_board(path: Path):
     """Exclusive lockfile next to the CSV. Returned context manager."""
-    import fcntl
     from contextlib import contextmanager
+
+    try:
+        import fcntl
+    except ImportError:
+        # Windows Python (Git Bash) has no fcntl.
+        fcntl = None
+        import msvcrt
 
     @contextmanager
     def _locked():
@@ -206,10 +212,23 @@ def lock_board(path: Path):
         lock = path.with_name(".job-board.lock")
         handle = lock.open("a+", encoding="utf-8")
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            else:
+                handle.seek(0)
+                while True:
+                    try:
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                        break
+                    except OSError:
+                        continue
             yield
         finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            else:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             handle.close()
 
     return _locked()
@@ -377,9 +396,9 @@ def next_id(rows: list[dict[str, str]]) -> str:
 
 def claim(rows: list[dict[str, str]], task_id: str, actor: str) -> str:
     actor = require_actor(actor)
-    if actor.startswith("human:"):
-        raise BoardError("Humans claim by setting owner in Excel or with: board.py set --owner human:name")
     row = require_row(rows, task_id)
+    if actor.startswith("human:"):
+        return human_take(row, actor)
     role = row.get("role", "")
     if role and role != actor:
         raise BoardError(
@@ -411,6 +430,22 @@ def claim(rows: list[dict[str, str]], task_id: str, actor: str) -> str:
     row["status"] = "claimed"
     touch(row)
     return f"Claimed {task_id} as {actor}. Create the branch, then start the task before editing product code."
+
+
+def human_take(row: dict[str, str], actor: str) -> str:
+    """A person outranks the board: they may take any open row, even from a desk."""
+    task_id = row.get("id", "")
+    if row.get("status") in {"done", "dropped"}:
+        raise BoardError(f"{task_id} is {row.get('status')}. Reopen it before you take it.")
+    previous = row.get("owner", "")
+    row["owner"] = actor
+    if row.get("status") in {"backlog", "ready"}:
+        row["status"] = "claimed"
+    touch(row)
+    if previous and previous != actor:
+        append_note(row, f"HUMAN: {actor} took this from {previous}")
+        return f"{actor} took {task_id} from {previous}. Tell {previous} to stop."
+    return f"Claimed {task_id} as {actor}."
 
 
 def release(rows: list[dict[str, str]], task_id: str, actor: str, note: str = "") -> str:

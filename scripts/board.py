@@ -60,6 +60,16 @@ def cmd_next(args: argparse.Namespace) -> None:
     print(coordlib.format_row(row, rows))
 
 
+def cmd_messages(args: argparse.Namespace) -> None:
+    folder = coordlib.messages_dir()
+    for path in sorted(folder.glob("*.md")):
+        if path.name == "README.md":
+            continue
+        print(f"===== {path}")
+        print(path.read_text(encoding="utf-8").rstrip())
+        print()
+
+
 def cmd_validate(args: argparse.Namespace) -> None:
     rows = coordlib.load_board(coordlib.board_path())
     messages = coordlib.validate_rows(rows)
@@ -187,6 +197,9 @@ def build_parser() -> argparse.ArgumentParser:
     next_cmd = sub.add_parser("next", help="Print the one task this desk should touch")
     next_cmd.add_argument("--as", dest="as_agent", required=True)
     next_cmd.set_defaults(func=cmd_next)
+
+    messages = sub.add_parser("messages", help="Print every desk's outbox from the live coord copy")
+    messages.set_defaults(func=cmd_messages)
 
     validate = sub.add_parser("validate", help="Check ids, owners, dependencies, and path overlap")
     validate.set_defaults(func=cmd_validate)

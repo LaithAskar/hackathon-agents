@@ -43,6 +43,47 @@ class BoardTest(unittest.TestCase):
             coordlib.claim(sample_rows(), "T-006", "frontend")
         self.assertEqual(blocked.exception.code, 3)
 
+    def test_human_takes_a_row_from_a_desk(self):
+        rows = sample_rows()
+        coordlib.claim(rows, "T-004", "backend")
+        message = coordlib.claim(rows, "T-004", "human:laith")
+        self.assertIn("took T-004 from backend", message)
+        row = next(item for item in rows if item["id"] == "T-004")
+        self.assertEqual(row["owner"], "human:laith")
+        self.assertIn("HUMAN:", row["notes"])
+        with self.assertRaises(coordlib.BoardError) as refused:
+            coordlib.claim(rows, "T-004", "backend")
+        self.assertEqual(refused.exception.code, 2)
+        coordlib.claim(rows, "T-001", "human:laith")
+        self.assertEqual(rows[0]["status"], "claimed")
+        self.assertEqual(coordlib.validation_errors_only(coordlib.validate_rows(rows)), [])
+
+    def test_lock_without_fcntl(self):
+        calls = []
+
+        class FakeMsvcrt:
+            LK_LOCK = 1
+            LK_UNLCK = 0
+
+            @staticmethod
+            def locking(fd, mode, size):
+                calls.append((mode, size))
+
+        saved = {name: sys.modules.get(name) for name in ("fcntl", "msvcrt")}
+        sys.modules["fcntl"] = None
+        sys.modules["msvcrt"] = FakeMsvcrt
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                with coordlib.lock_board(Path(tmp) / "job-board.csv"):
+                    pass
+        finally:
+            for name, module in saved.items():
+                if module is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = module
+        self.assertEqual(calls, [(1, 1), (0, 1)])
+
     def test_worker_cannot_mark_done(self):
         rows = sample_rows()
         with self.assertRaises(coordlib.BoardError):
