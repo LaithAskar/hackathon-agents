@@ -9,6 +9,7 @@ read-modify-write, not a blind edit that races another desk.
 from __future__ import annotations
 
 import csv
+import io
 import os
 import re
 import subprocess
@@ -162,7 +163,19 @@ def split_list(cell: str) -> list[str]:
 def load_board(path: Path) -> list[dict[str, str]]:
     if not path.is_file():
         raise BoardError(f"Missing job board: {path}")
-    with path.open(newline="", encoding="utf-8-sig") as handle:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        raise BoardError(
+            f"{path} is not UTF-8. In Excel, use File > Save As > CSV UTF-8 (Comma delimited), then run validate."
+        ) from None
+    for number, line in enumerate(text.splitlines(), start=1):
+        if line.startswith(("<<<<<<<", ">>>>>>>")) or line == "=======":
+            raise BoardError(
+                f"{path} line {number} is a git merge conflict marker. Resolve the conflict in the CSV "
+                "(keep the row of whoever claimed first), commit it, then run validate."
+            )
+    with io.StringIO(text, newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             raise BoardError(f"{path} is empty.")
@@ -411,8 +424,8 @@ def claim(rows: list[dict[str, str]], task_id: str, actor: str) -> str:
             f"{task_id} is already claimed by {owner}. Leave it, or ask them to release it.",
             code=2,
         )
-    if row.get("status") == "claimed" and owner == actor:
-        return f"{task_id} is already claimed by {actor}."
+    if owner == actor and row.get("status") in ACTIVE:
+        return f"{task_id} is already claimed by {actor} ({row.get('status')})."
     if row.get("status") != "ready":
         raise BoardError(
             f"{task_id} is {row.get('status')}, not ready. Ask the orchestrator to mark it ready before you claim it.",
@@ -489,6 +502,8 @@ def set_status(
         raise BoardError("Only the orchestrator drops a task. A human:name may also drop it.")
     if status == "ready" and row.get("status") == "backlog" and not actor_is_lead(actor):
         raise BoardError("Only the orchestrator moves backlog to ready.")
+    if row.get("status") in {"done", "dropped"} and not actor_is_lead(actor):
+        raise BoardError(f"{task_id} is {row.get('status')}. Only the orchestrator, or a human:name, reopens it.")
     if not actor_is_lead(actor):
         require_owner_or_lead(row, actor)
     check_transition(row, status)
@@ -517,6 +532,8 @@ def set_status(
         if not actor_is_lead(actor):
             raise BoardError("Only the orchestrator changes role.")
         row["role"] = role
+        if row.get("owner") in AGENTS and row.get("owner") != role:
+            row["owner"] = ""
     if status in {"claimed", "in_progress", "review", "done"} and not row.get("owner"):
         raise BoardError(f"{task_id} needs an owner before it can be {status}.")
     row["status"] = status
@@ -706,11 +723,11 @@ def render_xlsx(rows: list[dict[str, str]], dest: Path) -> None:
     <col min="11" max="11" width="42" customWidth="1"/>
     <col min="12" max="12" width="22" customWidth="1"/>
   </cols>
-  <autoFilter ref="A1:{last_col}{last_row}"/>
   <sheetData>
     <row r="1">{header}</row>
     {"".join(body)}
   </sheetData>
+  <autoFilter ref="A1:{last_col}{last_row}"/>
 </worksheet>
 '''
     legend_rows = [
@@ -873,6 +890,12 @@ def git_commit_coord(coord_dir: Path, message: str) -> str:
     root = coord_dir.parent if coord_dir.name == "coordination" else coord_dir
     if not (root / ".git").exists() and not (root / ".git").is_file():
         return "Skipped commit (not a worktree)."
+    # Desks commit at the same moment. Serialize on the board lock so git's index.lock never collides.
+    with lock_board(board_path(coord_dir)):
+        return _git_commit(root, message)
+
+
+def _git_commit(root: Path, message: str) -> str:
     add = subprocess.run(
         ["git", "-C", str(root), "add", "-A", "--", "coordination"],
         text=True,

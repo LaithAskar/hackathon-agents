@@ -104,6 +104,17 @@ fi
 python3 scripts/board.py release T-004 --as backend --note "smoke release" --commit >/dev/null
 git -C .worktrees/coord log -1 --format=%s | grep -q "^coord:"
 
+# Desks committing at the same moment must all succeed.
+pids=()
+for desk in orchestrator frontend backend platform; do
+  (cd ".worktrees/${desk}" && python3 scripts/post.py --from "${desk}" --to all --body "parallel" --commit >/dev/null) &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "${pid}"
+done
+test -z "$(git -C .worktrees/coord status --porcelain -- coordination)"
+
 ./scripts/launch.sh frontend --print > "${TMP}/launch.txt"
 grep -q "agents/frontend.md" "${TMP}/launch.txt"
 (eval "$(head -1 "${TMP}/launch.txt")" && test -f .hackathon-role)
