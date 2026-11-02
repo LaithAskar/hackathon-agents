@@ -9,12 +9,21 @@ The job board and the outboxes are how four agents share one hackathon without s
 | Path | Branch | Who works here |
 | --- | --- | --- |
 | `.worktrees/coord` | `coord` | Nobody writes product code. The live CSV and outboxes are here. |
-| `.worktrees/orchestrator` | `agent/orchestrator` | Orchestrator |
-| `.worktrees/frontend` | `agent/frontend` | Frontend |
-| `.worktrees/backend` | `agent/backend` | Backend |
-| `.worktrees/platform` | `agent/platform` | Platform |
+| `.worktrees/orchestrator` | `desk/orchestrator` | Orchestrator |
+| `.worktrees/frontend` | `desk/frontend` | Frontend |
+| `.worktrees/backend` | `desk/backend` | Backend |
+| `.worktrees/platform` | `desk/platform` | Platform |
 
 `python3 scripts/board.py` and `python3 scripts/post.py` always read and write the coord copy when that worktree exists, even if you run them from another desk. Commit those updates with `--commit` when a teammate on another machine needs them, then push `coord`.
+
+### More than one laptop
+
+The lock only stops two desks on the same machine. Each laptop has its own `coord` worktree, so a claim on one laptop is invisible to the others until it is pushed and pulled.
+
+- Push `coord` once from the first laptop (`git -C .worktrees/coord push -u origin coord`). Run `./scripts/setup.sh` on the other laptops after that. It starts their `coord` from `origin/coord`.
+- Before a claim, pull: `git -C .worktrees/coord pull --rebase origin coord`.
+- Claim with `--commit`, then push right away: `git -C .worktrees/coord push origin coord`.
+- If the push is rejected, pull with `--rebase` again. A conflict on that row means another laptop claimed it first. Keep their line, and do not start the task.
 
 Open this file in Excel:
 
@@ -120,7 +129,7 @@ python3 scripts/post.py --from backend --to frontend --task T-014 \
   --body "GET /api/items returns {items:[{id,name}]}."
 ```
 
-Read every outbox at the start of a turn. Respond in your own file, not by editing theirs. The orchestrator turns a real decision into a board edit. Chat that never hits the board did not happen, for the other desks.
+Read every outbox at the start of a turn with `python3 scripts/board.py messages`. It prints the live copies on `coord`. The `coordination/messages/` folder inside a desk worktree is stale. Respond in your own file, not by editing theirs. The orchestrator turns a real decision into a board edit. Chat that never hits the board did not happen, for the other desks.
 
 Use messages for API shapes, a path you must borrow, a blocker, and handoffs. Keep them short.
 
@@ -145,7 +154,7 @@ When a human steps in:
 
 - Their chat instruction wins over this file.
 - Record it. `--as human:name`, or a note that starts with `HUMAN:`.
-- To take a task away from an agent, set `owner` to `human:name` (Excel or `board.py`) and tell the agent to stop. Agents do not reclaim a `human:` owner.
+- To take a task away from an agent, run `python3 scripts/board.py claim T-014 --as human:name` (or set `owner` to `human:name` in Excel) and tell the agent to stop. Agents do not reclaim a `human:` owner.
 - To halt everyone, `python3 scripts/board.py stop --as orchestrator --note "reason"`. That writes `coordination/STOP`. `list` then exits 4. Clear it with `python3 scripts/board.py go --as orchestrator` when work should resume.
 - To cut scope, the orchestrator marks the row `dropped` with a note. Agents do not argue by reopening it.
 

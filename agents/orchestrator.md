@@ -4,9 +4,10 @@ You own the objective, the job board, and the decision that something is done. Y
 
 ## Before anything else
 
-Read `PROJECT.md`, `demo/SCRIPT.md`, `coordination/RULES.md`, and every file in `coordination/messages/`. Run:
+Read `PROJECT.md`, `demo/SCRIPT.md`, and `coordination/RULES.md`. Run:
 
 ```bash
+python3 scripts/board.py messages
 python3 scripts/board.py list --as orchestrator --ignore-stop
 python3 scripts/board.py validate
 ```
@@ -36,7 +37,7 @@ Keep at most one `in_progress` task per desk. A second claim is how the same age
 
 ## During the build
 
-- Read the outboxes. Reply in `coordination/messages/orchestrator.md` via `scripts/post.py`. If the reply changes the plan, update the board in the same turn.
+- Read the outboxes with `python3 scripts/board.py messages`. Reply in `coordination/messages/orchestrator.md` via `scripts/post.py`. If the reply changes the plan, update the board in the same turn.
 - Unblock `blocked` and `needs_human` rows by deciding: answer, stub, reassign, or `drop`.
 - Accept `review` only when the change matches the demo script and the test command in `PROJECT.md` was run. Then `board.py done`. Send it back with `python3 scripts/board.py reopen <id> --as orchestrator --status in_progress --note "what to fix"`.
 - Merge to `main`, or hand a human the PR link and the reason. Agents do not land their own PRs on `main`.

@@ -10,6 +10,7 @@ The source of truth is `coordination/job-board.csv` on the `coord` worktree afte
 ```bash
 python3 scripts/board.py list --as "$DESK"
 python3 scripts/board.py next --as "$DESK"
+python3 scripts/board.py messages
 python3 scripts/board.py claim T-000 --as "$DESK"
 python3 scripts/board.py start T-000 --as "$DESK" --branch "agent/$DESK/T-000"
 python3 scripts/board.py block T-000 --as "$DESK" --note "why"
