@@ -2,6 +2,14 @@
 
 A starter kit for a 3-person team that wants four coding agents on one hackathon project: an orchestrator, a frontend desk, a backend desk, and a platform desk (auth, data, env, CI, deploy). The agents coordinate through a job board you can open in Excel, and through short files they append to. The kit is framework-agnostic and MIT licensed.
 
+![Pantry job board filling in as desks claim and finish tasks](docs/demo.gif)
+
+The loop shows a small grocery app: tasks appear, then move through claim, in progress, review, and done. Regenerate it with `python3 scripts/make_demo_gif.py` (needs [Pillow](https://pypi.org/project/Pillow/)). The same afternoon as a CSV is [examples/sample-project/job-board.csv](examples/sample-project/job-board.csv): Pantry, with auth on the platform desk, an items API, and a list screen. A few outbox messages sit next to that file.
+
+```bash
+HACKATHON_COORD_DIR=examples/sample-project python3 scripts/board.py validate
+```
+
 It does not ship a product, a model router, or a hosted orchestrator. You drop these files into your repo, fill in `PROJECT.md`, and start four sessions.
 
 ```text
@@ -165,7 +173,7 @@ The intended setup is four sessions, one per worktree. Claude's experimental age
 
 Copy everything except `.git/` into your project, commit, then run `./scripts/setup.sh`. Change the file map in `PROJECT.md` so `owned_paths` match your tree (`apps/web` instead of `web/`, and so on). Delete the `EXAMPLE` board rows once real tasks exist. Keep `scripts/`, `coordination/`, `agents/`, `AGENTS.md`, and `CLAUDE.md`. The sample tasks are scaffolding, not a product.
 
-Requires `git` and `python3`. No pip packages. Shell scripts are bash (macOS, Linux, WSL, or Git Bash).
+Requires `git` and `python3`. Desks, the board, and setup use the standard library. Regenerating `docs/demo.gif` needs Pillow. Shell scripts are bash (macOS, Linux, WSL, or Git Bash).
 
 ## Repo map
 
@@ -175,6 +183,9 @@ Requires `git` and `python3`. No pip packages. Shell scripts are bash (macOS, Li
 | `CLAUDE.md` | Claude Code entry. Points at `AGENTS.md`. |
 | `agents/*.md` | The four role prompts. |
 | `docs/agent-md-guide.md` | What to write in the agent files, with a template and two filled examples. |
+| `docs/demo.gif` | Loop of a sample board filling in. |
+| `scripts/make_demo_gif.py` | Regenerates that GIF from the sample CSV. |
+| `examples/sample-project/` | Filled Pantry board and a few outbox messages. |
 | `.claude/agents/*.md` | The same desks as Claude Code subagents. |
 | `.claude/skills/job-board/` | Skill for board and outbox commands. |
 | `.cursor/rules/hackathon-desk.mdc` | Cursor rule that points at the same contract. |
