@@ -39,7 +39,7 @@ fi
 
 PROMPT="You are the ${ROLE} desk on a 4-agent hackathon team. Your role file is .hackathon-role. Read AGENTS.md, agents/${ROLE}.md, coordination/RULES.md, PROJECT.md, and demo/SCRIPT.md before you edit anything. Claim a task with python3 scripts/board.py before you change product code. Do not mark tasks done unless you are the orchestrator."
 
-echo "cd ${DESK}"
+echo "cd $(printf '%q' "${DESK}")"
 echo
 echo "# Claude Code"
 echo "claude $(printf '%q' "${PROMPT}")"
@@ -52,7 +52,7 @@ echo "hermes"
 echo "# Then paste: Follow agents/${ROLE}.md. You are the ${ROLE} desk."
 echo
 echo "# Cursor"
-echo "cursor ${DESK}"
+echo "cursor $(printf '%q' "${DESK}")"
 echo "# AGENTS.md and .cursor/rules load with the folder. Paste the same first instruction if the chat is empty."
 
 if [[ "${MODE}" == "--print" || "${MODE}" == "" ]]; then

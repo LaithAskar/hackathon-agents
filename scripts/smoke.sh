@@ -44,7 +44,10 @@ test -d .worktrees/platform
 test -d .worktrees/orchestrator
 test -f .worktrees/coord/coordination/job-board.csv
 git -C .worktrees/coord rev-parse --abbrev-ref HEAD | grep -qx coord
-git -C .worktrees/frontend rev-parse --abbrev-ref HEAD | grep -qx agent/frontend
+git -C .worktrees/frontend rev-parse --abbrev-ref HEAD | grep -qx desk/frontend
+
+# The documented task branch must be creatable next to the desk branch.
+git -C .worktrees/backend checkout -q -B agent/backend/T-004 main
 
 # Claims land on the coord worktree, not the stale copy on main.
 python3 scripts/board.py claim T-004 --as backend >/dev/null
@@ -55,7 +58,7 @@ if grep -q "T-004,.*,backend,claimed," coordination/job-board.csv; then
 fi
 
 set +e
-python3 scripts/board.py claim T-004 --as frontend >/tmp/claim-conflict.txt 2>&1
+python3 scripts/board.py claim T-004 --as frontend >"${TMP}/claim-conflict.txt" 2>&1
 code=$?
 set -e
 if [[ "${code}" -eq 0 ]]; then
@@ -64,7 +67,7 @@ if [[ "${code}" -eq 0 ]]; then
 fi
 
 set +e
-python3 scripts/board.py claim T-006 --as frontend >/tmp/claim-deps.txt 2>&1
+python3 scripts/board.py claim T-006 --as frontend >"${TMP}/claim-deps.txt" 2>&1
 code=$?
 set -e
 if [[ "${code}" -eq 0 ]]; then
@@ -96,12 +99,25 @@ if grep -q "Happy-path shape" .worktrees/coord/coordination/messages/frontend.md
   echo "message was written to the recipient file instead of the sender outbox" >&2
   exit 1
 fi
+(cd .worktrees/frontend && python3 scripts/board.py messages) | grep -q "Happy-path shape"
 
 python3 scripts/board.py release T-004 --as backend --note "smoke release" --commit >/dev/null
 git -C .worktrees/coord log -1 --format=%s | grep -q "^coord:"
 
+# Desks committing at the same moment must all succeed.
+pids=()
+for desk in orchestrator frontend backend platform; do
+  (cd ".worktrees/${desk}" && python3 scripts/post.py --from "${desk}" --to all --body "parallel" --commit >/dev/null) &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "${pid}"
+done
+test -z "$(git -C .worktrees/coord status --porcelain -- coordination)"
+
 ./scripts/launch.sh frontend --print > "${TMP}/launch.txt"
 grep -q "agents/frontend.md" "${TMP}/launch.txt"
+(eval "$(head -1 "${TMP}/launch.txt")" && test -f .hackathon-role)
 ./scripts/setup.sh >/dev/null
 
 python3 -m unittest tests/test_board.py

@@ -46,6 +46,12 @@ flowchart TD
   orch -->|marks done, then merge| main
 ```
 
+## Write the agent files first
+
+Before setup, fill in `PROJECT.md` (pitch, stack, install / dev / test / deploy commands, file map) and give each `agents/<role>.md` its paths, its limits, its part of the click path, a definition of done, when to stop for a human, and a timebox. `AGENTS.md` and `CLAUDE.md` hold the shared rules and usually stay as they are. Commit, then run setup, so every worktree starts with the filled-in files.
+
+[docs/agent-md-guide.md](docs/agent-md-guide.md) has each section with a short example, a template to copy, and filled examples for the orchestrator and the backend desk.
+
 ## Start here
 
 From a git repo that already has one commit (this one, or your app after you copy these files in):
@@ -59,10 +65,10 @@ That creates five worktrees:
 | Folder | Branch | Desk |
 | --- | --- | --- |
 | `.worktrees/coord` | `coord` | Live board and outboxes. No product code. |
-| `.worktrees/orchestrator` | `agent/orchestrator` | Orchestrator |
-| `.worktrees/frontend` | `agent/frontend` | Frontend |
-| `.worktrees/backend` | `agent/backend` | Backend |
-| `.worktrees/platform` | `agent/platform` | Platform |
+| `.worktrees/orchestrator` | `desk/orchestrator` | Orchestrator |
+| `.worktrees/frontend` | `desk/frontend` | Frontend |
+| `.worktrees/backend` | `desk/backend` | Backend |
+| `.worktrees/platform` | `desk/platform` | Platform |
 
 Open the board in Excel:
 
@@ -118,18 +124,20 @@ python3 scripts/board.py review T-004 --as backend --pr "https://github.com/org/
 python3 scripts/board.py done T-004 --as orchestrator
 ```
 
-`claim` fails if another desk already owns the row, or if `depends_on` is not all `done`. A desk cannot mark its own task `done`. The columns are `id`, `task`, `role`, `owner`, `status`, `priority`, `depends_on`, `branch`, `pr`, `owned_paths`, `notes`, `updated`. The full contract is [coordination/RULES.md](coordination/RULES.md). The short version every agent loads is [AGENTS.md](AGENTS.md).
+`claim` fails if another desk already owns the row, or if `depends_on` is not all `done`. A desk cannot mark its own task `done`. That lock covers the desks on one machine. If the team spreads desks over several laptops, follow [More than one laptop](coordination/RULES.md#more-than-one-laptop). The columns are `id`, `task`, `role`, `owner`, `status`, `priority`, `depends_on`, `branch`, `pr`, `owned_paths`, `notes`, `updated`. The full contract is [coordination/RULES.md](coordination/RULES.md). The short version every agent loads is [AGENTS.md](AGENTS.md).
 
 Talk to another desk by appending to your own outbox:
 
 ```bash
 python3 scripts/post.py --from backend --to frontend --task T-004 \
   --body "GET /api/items returns {items:[{id,name}]}."
+python3 scripts/board.py messages   # every outbox, from the live coord copy
 ```
 
 A human can take over a row (`owner` = `human:name`), write a note that starts with `HUMAN:`, or halt every desk:
 
 ```bash
+python3 scripts/board.py claim T-004 --as human:laith
 python3 scripts/board.py stop --as orchestrator --note "Freeze. Demo breaks only."
 python3 scripts/board.py go --as orchestrator
 ```
@@ -166,6 +174,7 @@ Requires `git` and `python3`. No pip packages. Shell scripts are bash (macOS, Li
 | `AGENTS.md` | Rules Codex, Cursor, and Hermes load. Claude loads them too. |
 | `CLAUDE.md` | Claude Code entry. Points at `AGENTS.md`. |
 | `agents/*.md` | The four role prompts. |
+| `docs/agent-md-guide.md` | What to write in the agent files, with a template and two filled examples. |
 | `.claude/agents/*.md` | The same desks as Claude Code subagents. |
 | `.claude/skills/job-board/` | Skill for board and outbox commands. |
 | `.cursor/rules/hackathon-desk.mdc` | Cursor rule that points at the same contract. |

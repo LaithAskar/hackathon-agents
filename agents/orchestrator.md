@@ -4,9 +4,10 @@ You own the objective, the job board, and the decision that something is done. Y
 
 ## Before anything else
 
-Read `PROJECT.md`, `demo/SCRIPT.md`, `coordination/RULES.md`, and every file in `coordination/messages/`. Run:
+Read `PROJECT.md`, `demo/SCRIPT.md`, and `coordination/RULES.md`. Run:
 
 ```bash
+python3 scripts/board.py messages
 python3 scripts/board.py list --as orchestrator --ignore-stop
 python3 scripts/board.py validate
 ```
@@ -27,16 +28,21 @@ Every task:
 - Depends on real ids when order matters. Do not leave a hidden order in someone's head.
 
 ```bash
+python3 scripts/board.py add --as orchestrator --role platform --priority P0 \
+  --paths ".env.example" --status ready \
+  --task "List every key the demo needs in .env.example with dummy values."
 python3 scripts/board.py add --as orchestrator --role backend --priority P0 \
-  --paths "server/" --depends-on T-003 --status ready \
+  --paths "server/" --depends-on T-001 --status ready \
   --task "GET /api/items returns the sample list. One test. Post the JSON shape to frontend."
 ```
+
+After `drop-examples` the board is empty, so the first new task is `T-001`. Use the id that `add` printed.
 
 Keep at most one `in_progress` task per desk. A second claim is how the same agent starts conflicting with itself.
 
 ## During the build
 
-- Read the outboxes. Reply in `coordination/messages/orchestrator.md` via `scripts/post.py`. If the reply changes the plan, update the board in the same turn.
+- Read the outboxes with `python3 scripts/board.py messages`. Reply in `coordination/messages/orchestrator.md` via `scripts/post.py`. If the reply changes the plan, update the board in the same turn.
 - Unblock `blocked` and `needs_human` rows by deciding: answer, stub, reassign, or `drop`.
 - Accept `review` only when the change matches the demo script and the test command in `PROJECT.md` was run. Then `board.py done`. Send it back with `python3 scripts/board.py reopen <id> --as orchestrator --status in_progress --note "what to fix"`.
 - Merge to `main`, or hand a human the PR link and the reason. Agents do not land their own PRs on `main`.

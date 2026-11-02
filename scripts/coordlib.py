@@ -9,6 +9,7 @@ read-modify-write, not a blind edit that races another desk.
 from __future__ import annotations
 
 import csv
+import io
 import os
 import re
 import subprocess
@@ -162,7 +163,19 @@ def split_list(cell: str) -> list[str]:
 def load_board(path: Path) -> list[dict[str, str]]:
     if not path.is_file():
         raise BoardError(f"Missing job board: {path}")
-    with path.open(newline="", encoding="utf-8-sig") as handle:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        raise BoardError(
+            f"{path} is not UTF-8. In Excel, use File > Save As > CSV UTF-8 (Comma delimited), then run validate."
+        ) from None
+    for number, line in enumerate(text.splitlines(), start=1):
+        if line.startswith(("<<<<<<<", ">>>>>>>")) or line == "=======":
+            raise BoardError(
+                f"{path} line {number} is a git merge conflict marker. Resolve the conflict in the CSV "
+                "(keep the row of whoever claimed first), commit it, then run validate."
+            )
+    with io.StringIO(text, newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             raise BoardError(f"{path} is empty.")
@@ -197,8 +210,14 @@ def save_board(path: Path, rows: list[dict[str, str]]) -> None:
 
 def lock_board(path: Path):
     """Exclusive lockfile next to the CSV. Returned context manager."""
-    import fcntl
     from contextlib import contextmanager
+
+    try:
+        import fcntl
+    except ImportError:
+        # Windows Python (Git Bash) has no fcntl.
+        fcntl = None
+        import msvcrt
 
     @contextmanager
     def _locked():
@@ -206,10 +225,23 @@ def lock_board(path: Path):
         lock = path.with_name(".job-board.lock")
         handle = lock.open("a+", encoding="utf-8")
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            else:
+                handle.seek(0)
+                while True:
+                    try:
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                        break
+                    except OSError:
+                        continue
             yield
         finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            else:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             handle.close()
 
     return _locked()
@@ -345,6 +377,9 @@ def validate_rows(rows: list[dict[str, str]]) -> list[str]:
                 errors.append(f"{row.get('id')}: depends_on {dep}, which does not exist.")
             elif dep == row.get("id"):
                 errors.append(f"{row.get('id')}: cannot depend on itself.")
+    cycle = find_cycle({task_id: [d for d in deps_of(row) if d in seen and d != task_id] for task_id, row in seen.items()})
+    if cycle:
+        errors.append(f"{cycle[0]}: depends_on cycle {' -> '.join(cycle)}. No task in it can be claimed.")
     active_paths: list[tuple[str, str]] = []
     for row in rows:
         if row.get("status") not in ACTIVE:
@@ -362,6 +397,29 @@ def validate_rows(rows: list[dict[str, str]]) -> list[str]:
     return errors + warnings
 
 
+def find_cycle(graph: dict[str, list[str]]) -> list[str] | None:
+    state: dict[str, str] = {}
+
+    def visit(node: str, path: list[str]) -> list[str] | None:
+        state[node] = "open"
+        for dep in graph.get(node, []):
+            if state.get(dep) == "open":
+                return path[path.index(dep):] + [dep]
+            if dep not in state:
+                found = visit(dep, path + [dep])
+                if found:
+                    return found
+        state[node] = "closed"
+        return None
+
+    for node in graph:
+        if node not in state:
+            found = visit(node, [node])
+            if found:
+                return found
+    return None
+
+
 def validation_errors_only(messages: list[str]) -> list[str]:
     return [message for message in messages if not message.startswith("warning:")]
 
@@ -377,9 +435,9 @@ def next_id(rows: list[dict[str, str]]) -> str:
 
 def claim(rows: list[dict[str, str]], task_id: str, actor: str) -> str:
     actor = require_actor(actor)
-    if actor.startswith("human:"):
-        raise BoardError("Humans claim by setting owner in Excel or with: board.py set --owner human:name")
     row = require_row(rows, task_id)
+    if actor.startswith("human:"):
+        return human_take(row, actor)
     role = row.get("role", "")
     if role and role != actor:
         raise BoardError(
@@ -392,8 +450,8 @@ def claim(rows: list[dict[str, str]], task_id: str, actor: str) -> str:
             f"{task_id} is already claimed by {owner}. Leave it, or ask them to release it.",
             code=2,
         )
-    if row.get("status") == "claimed" and owner == actor:
-        return f"{task_id} is already claimed by {actor}."
+    if owner == actor and row.get("status") in ACTIVE:
+        return f"{task_id} is already claimed by {actor} ({row.get('status')})."
     if row.get("status") != "ready":
         raise BoardError(
             f"{task_id} is {row.get('status')}, not ready. Ask the orchestrator to mark it ready before you claim it.",
@@ -411,6 +469,22 @@ def claim(rows: list[dict[str, str]], task_id: str, actor: str) -> str:
     row["status"] = "claimed"
     touch(row)
     return f"Claimed {task_id} as {actor}. Create the branch, then start the task before editing product code."
+
+
+def human_take(row: dict[str, str], actor: str) -> str:
+    """A person outranks the board: they may take any open row, even from a desk."""
+    task_id = row.get("id", "")
+    if row.get("status") in {"done", "dropped"}:
+        raise BoardError(f"{task_id} is {row.get('status')}. Reopen it before you take it.")
+    previous = row.get("owner", "")
+    row["owner"] = actor
+    if row.get("status") in {"backlog", "ready"}:
+        row["status"] = "claimed"
+    touch(row)
+    if previous and previous != actor:
+        append_note(row, f"HUMAN: {actor} took this from {previous}")
+        return f"{actor} took {task_id} from {previous}. Tell {previous} to stop."
+    return f"Claimed {task_id} as {actor}."
 
 
 def release(rows: list[dict[str, str]], task_id: str, actor: str, note: str = "") -> str:
@@ -454,6 +528,8 @@ def set_status(
         raise BoardError("Only the orchestrator drops a task. A human:name may also drop it.")
     if status == "ready" and row.get("status") == "backlog" and not actor_is_lead(actor):
         raise BoardError("Only the orchestrator moves backlog to ready.")
+    if row.get("status") in {"done", "dropped"} and not actor_is_lead(actor):
+        raise BoardError(f"{task_id} is {row.get('status')}. Only the orchestrator, or a human:name, reopens it.")
     if not actor_is_lead(actor):
         require_owner_or_lead(row, actor)
     check_transition(row, status)
@@ -482,6 +558,8 @@ def set_status(
         if not actor_is_lead(actor):
             raise BoardError("Only the orchestrator changes role.")
         row["role"] = role
+        if row.get("owner") in AGENTS and row.get("owner") != role:
+            row["owner"] = ""
     if status in {"claimed", "in_progress", "review", "done"} and not row.get("owner"):
         raise BoardError(f"{task_id} needs an owner before it can be {status}.")
     row["status"] = status
@@ -671,11 +749,11 @@ def render_xlsx(rows: list[dict[str, str]], dest: Path) -> None:
     <col min="11" max="11" width="42" customWidth="1"/>
     <col min="12" max="12" width="22" customWidth="1"/>
   </cols>
-  <autoFilter ref="A1:{last_col}{last_row}"/>
   <sheetData>
     <row r="1">{header}</row>
     {"".join(body)}
   </sheetData>
+  <autoFilter ref="A1:{last_col}{last_row}"/>
 </worksheet>
 '''
     legend_rows = [
@@ -838,6 +916,12 @@ def git_commit_coord(coord_dir: Path, message: str) -> str:
     root = coord_dir.parent if coord_dir.name == "coordination" else coord_dir
     if not (root / ".git").exists() and not (root / ".git").is_file():
         return "Skipped commit (not a worktree)."
+    # Desks commit at the same moment. Serialize on the board lock so git's index.lock never collides.
+    with lock_board(board_path(coord_dir)):
+        return _git_commit(root, message)
+
+
+def _git_commit(root: Path, message: str) -> str:
     add = subprocess.run(
         ["git", "-C", str(root), "add", "-A", "--", "coordination"],
         text=True,

@@ -11,7 +11,7 @@ Read `coordination/RULES.md`, `PROJECT.md`, and `demo/SCRIPT.md` before you chan
 On every turn:
 
 1. Run `python3 scripts/board.py list --as <desk>`. If it exits with code 4, a `coordination/STOP` file is present. Halt unless you are the orchestrator and a human told you to clear it.
-2. Read `coordination/messages/*.md` (every outbox, newest entries at the bottom).
+2. Run `python3 scripts/board.py messages` to read every outbox (newest entries at the bottom). The `coordination/messages/` folder in your own worktree is a stale copy.
 3. Do one task. Prefer `python3 scripts/board.py next --as <desk>`.
 4. Update the board before you stop, even if you are blocked.
 
@@ -20,6 +20,7 @@ Commands (live board, safe to run from any worktree after setup):
 ```bash
 python3 scripts/board.py list --as frontend
 python3 scripts/board.py next --as frontend
+python3 scripts/board.py messages
 python3 scripts/board.py claim T-004 --as backend
 python3 scripts/board.py start T-004 --as backend --branch agent/backend/T-004
 python3 scripts/board.py block T-004 --as backend --note "why"
@@ -51,7 +52,7 @@ Status flow: `backlog` → `ready` → `claimed` → `in_progress` → `review` 
 - Do not commit `.env`, keys, tokens, or dumps. `.env.example` is the only env file in git.
 - Do not force-push `main` or `coord`. Do not merge another desk's branch into yours. Rebase your task branch onto `main` when you need their accepted work.
 - The live spreadsheet is `.worktrees/coord/coordination/job-board.csv`. Excel can open that CSV. `python3 scripts/board.py render` writes a colored `.xlsx` beside it. The CSV is the source of truth. Do not edit the `.xlsx` and expect agents to see it.
-- Each desk appends only to its own file in `coordination/messages/`. Read all of them.
+- Each desk appends only to its own file in `coordination/messages/`, through `scripts/post.py`. Read all of them with `python3 scripts/board.py messages`.
 
 ## Humans
 

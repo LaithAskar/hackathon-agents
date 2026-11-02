@@ -41,10 +41,14 @@ def mutate(args, action):
 def cmd_list(args: argparse.Namespace) -> None:
     coord = coordlib.live_coord_dir()
     reason = coordlib.read_stop(coord)
-    rows = coordlib.load_board(coordlib.board_path(coord))
-    print(f"Board: {coordlib.board_path(coord)}")
     if reason:
         print(f"STOP: {reason}", file=sys.stderr)
+    try:
+        rows = coordlib.load_board(coordlib.board_path(coord))
+    except coordlib.BoardError as err:
+        print(str(err), file=sys.stderr)
+        raise SystemExit(4 if reason and not args.ignore_stop else err.code)
+    print(f"Board: {coordlib.board_path(coord)}")
     text = coordlib.format_board(rows, args.as_agent)
     print(text or "(no tasks)")
     if reason and not args.ignore_stop:
@@ -58,6 +62,16 @@ def cmd_next(args: argparse.Namespace) -> None:
         print(f"{args.as_agent} is idle. Tell the orchestrator.")
         raise SystemExit(0)
     print(coordlib.format_row(row, rows))
+
+
+def cmd_messages(args: argparse.Namespace) -> None:
+    folder = coordlib.messages_dir()
+    for path in sorted(folder.glob("*.md")):
+        if path.name == "README.md":
+            continue
+        print(f"===== {path}")
+        print(path.read_text(encoding="utf-8").rstrip())
+        print()
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
@@ -85,7 +99,9 @@ def cmd_render(args: argparse.Namespace) -> None:
 
 def cmd_claim(args: argparse.Namespace) -> None:
     def action(rows):
-        return coordlib.claim(rows, args.id, args.as_agent)
+        message = coordlib.claim(rows, args.id, args.as_agent)
+        coordlib.append_note(coordlib.require_row(rows, args.id), args.note or "")
+        return message
 
     mutate(args, action)
 
@@ -114,6 +130,14 @@ def cmd_status(args: argparse.Namespace, status: str) -> None:
     mutate(args, action)
 
 
+def cmd_reopen(args: argparse.Namespace) -> None:
+    if not args.status:
+        rows = coordlib.load_board(coordlib.board_path())
+        current = coordlib.require_row(rows, args.id).get("status")
+        args.status = "ready" if current == "dropped" else "in_progress"
+    cmd_status(args, args.status)
+
+
 def cmd_add(args: argparse.Namespace) -> None:
     def action(rows):
         return coordlib.add_task(
@@ -134,6 +158,8 @@ def cmd_add(args: argparse.Namespace) -> None:
 def cmd_drop_examples(args: argparse.Namespace) -> None:
     if not args.yes:
         raise coordlib.BoardError("Refusing to delete EXAMPLE rows without --yes.")
+    if not coordlib.actor_is_lead(coordlib.require_actor(args.as_agent)):
+        raise coordlib.BoardError("Only the orchestrator, or a human:name, deletes the EXAMPLE rows.")
 
     def action(rows):
         kept = coordlib.drop_examples(rows)
@@ -145,6 +171,7 @@ def cmd_drop_examples(args: argparse.Namespace) -> None:
 
 
 def cmd_stop(args: argparse.Namespace) -> None:
+    coordlib.require_actor(args.as_agent)
     coord = coordlib.live_coord_dir()
     path = coordlib.stop_path(coord)
     reason = (args.note or "Humans paused the desks.").strip()
@@ -187,6 +214,9 @@ def build_parser() -> argparse.ArgumentParser:
     next_cmd = sub.add_parser("next", help="Print the one task this desk should touch")
     next_cmd.add_argument("--as", dest="as_agent", required=True)
     next_cmd.set_defaults(func=cmd_next)
+
+    messages = sub.add_parser("messages", help="Print every desk's outbox from the live coord copy")
+    messages.set_defaults(func=cmd_messages)
 
     validate = sub.add_parser("validate", help="Check ids, owners, dependencies, and path overlap")
     validate.set_defaults(func=cmd_validate)
@@ -246,8 +276,13 @@ def build_parser() -> argparse.ArgumentParser:
     reopen = sub.add_parser("reopen", help="Orchestrator sends a done or dropped task back")
     add_common(reopen, mutating=True)
     reopen.add_argument("id")
-    reopen.add_argument("--status", choices=("in_progress", "review", "ready", "backlog"), default="in_progress")
-    reopen.set_defaults(func=lambda args: cmd_status(args, args.status))
+    reopen.add_argument(
+        "--status",
+        choices=("in_progress", "review", "ready", "backlog"),
+        default="",
+        help="Default: in_progress for a done task, ready for a dropped one",
+    )
+    reopen.set_defaults(func=cmd_reopen)
 
     assign = sub.add_parser("assign", help="Orchestrator sets the desk and moves backlog to ready")
     add_common(assign, mutating=True)

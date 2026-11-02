@@ -43,6 +43,93 @@ class BoardTest(unittest.TestCase):
             coordlib.claim(sample_rows(), "T-006", "frontend")
         self.assertEqual(blocked.exception.code, 3)
 
+    def test_human_takes_a_row_from_a_desk(self):
+        rows = sample_rows()
+        coordlib.claim(rows, "T-004", "backend")
+        message = coordlib.claim(rows, "T-004", "human:laith")
+        self.assertIn("took T-004 from backend", message)
+        row = next(item for item in rows if item["id"] == "T-004")
+        self.assertEqual(row["owner"], "human:laith")
+        self.assertIn("HUMAN:", row["notes"])
+        with self.assertRaises(coordlib.BoardError) as refused:
+            coordlib.claim(rows, "T-004", "backend")
+        self.assertEqual(refused.exception.code, 2)
+        coordlib.claim(rows, "T-001", "human:laith")
+        self.assertEqual(rows[0]["status"], "claimed")
+        self.assertEqual(coordlib.validation_errors_only(coordlib.validate_rows(rows)), [])
+
+    def test_assign_clears_the_old_desk(self):
+        rows = sample_rows()
+        coordlib.claim(rows, "T-004", "backend")
+        coordlib.set_status(rows, "T-004", "backend", "blocked", note="stuck")
+        coordlib.set_status(rows, "T-004", "orchestrator", "ready", role="frontend")
+        self.assertIn("Claimed", coordlib.claim(rows, "T-004", "frontend"))
+        self.assertEqual(coordlib.validation_errors_only(coordlib.validate_rows(rows)), [])
+
+    def test_only_the_lead_reopens(self):
+        rows = sample_rows()
+        coordlib.set_status(rows, "T-009", "orchestrator", "done")
+        with self.assertRaises(coordlib.BoardError):
+            coordlib.set_status(rows, "T-009", "backend", "in_progress")
+        coordlib.set_status(rows, "T-007", "orchestrator", "dropped", note="cut")
+        with self.assertRaises(coordlib.BoardError):
+            coordlib.set_status(rows, "T-007", "platform", "ready")
+        coordlib.set_status(rows, "T-007", "orchestrator", "ready")
+
+    def test_validate_reports_a_dependency_cycle(self):
+        rows = sample_rows()
+        rows[0]["depends_on"] = "T-002"
+        rows[1]["depends_on"] = "T-001"
+        errors = coordlib.validation_errors_only(coordlib.validate_rows(rows))
+        self.assertTrue(any("cycle" in error for error in errors), errors)
+
+    def test_claim_is_idempotent_after_start(self):
+        rows = sample_rows()
+        coordlib.claim(rows, "T-004", "backend")
+        coordlib.set_status(rows, "T-004", "backend", "in_progress")
+        self.assertIn("already claimed", coordlib.claim(rows, "T-004", "backend"))
+
+    def test_bad_saves_fail_with_a_plain_error(self):
+        source = (ROOT / "coordination" / "job-board.csv").read_text(encoding="utf-8-sig")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "job-board.csv"
+            path.write_text(source.replace("Fill in", "Fill in caf\u00e9"), encoding="cp1252")
+            with self.assertRaises(coordlib.BoardError) as encoding:
+                coordlib.load_board(path)
+            self.assertIn("CSV UTF-8", str(encoding.exception))
+            lines = source.splitlines()
+            lines[4:5] = ["<<<<<<< HEAD", lines[4], "=======", lines[4], ">>>>>>> theirs"]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            with self.assertRaises(coordlib.BoardError) as conflict:
+                coordlib.load_board(path)
+            self.assertIn("merge conflict", str(conflict.exception))
+
+    def test_lock_without_fcntl(self):
+        calls = []
+
+        class FakeMsvcrt:
+            LK_LOCK = 1
+            LK_UNLCK = 0
+
+            @staticmethod
+            def locking(fd, mode, size):
+                calls.append((mode, size))
+
+        saved = {name: sys.modules.get(name) for name in ("fcntl", "msvcrt")}
+        sys.modules["fcntl"] = None
+        sys.modules["msvcrt"] = FakeMsvcrt
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                with coordlib.lock_board(Path(tmp) / "job-board.csv"):
+                    pass
+        finally:
+            for name, module in saved.items():
+                if module is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = module
+        self.assertEqual(calls, [(1, 1), (0, 1)])
+
     def test_worker_cannot_mark_done(self):
         rows = sample_rows()
         with self.assertRaises(coordlib.BoardError):
@@ -97,7 +184,7 @@ class BoardTest(unittest.TestCase):
                 legend = archive.read("xl/worksheets/sheet2.xml").decode()
             self.assertIn("T-001", sheet)
             self.assertIn("frozen", sheet)
-            self.assertIn("autoFilter", sheet)
+            self.assertLess(sheet.index("</sheetData>"), sheet.index("<autoFilter"))
             self.assertIn("claimed", legend)
             self.assertIn("<fills", styles)
 

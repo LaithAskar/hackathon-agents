@@ -9,7 +9,7 @@ python3 scripts/board.py list --as frontend
 python3 scripts/board.py next --as frontend
 ```
 
-Read `demo/SCRIPT.md`, `PROJECT.md`, and `coordination/messages/*.md`. If `list` exits 4, stop.
+Read `demo/SCRIPT.md`, `PROJECT.md`, and the outboxes (`python3 scripts/board.py messages`). If `list` exits 4, stop.
 
 Claim before you edit:
 
