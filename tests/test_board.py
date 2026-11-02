@@ -21,12 +21,78 @@ def sample_rows():
     return coordlib.load_board(ROOT / "coordination" / "job-board.csv")
 
 
+def gif_delays_cs(data: bytes) -> list[int]:
+    delays = []
+    start = 0
+    marker = b"\x21\xf9\x04"
+    while True:
+        found = data.find(marker, start)
+        if found < 0 or found + 6 > len(data):
+            break
+        delays.append(int.from_bytes(data[found + 4 : found + 6], "little"))
+        start = found + 6
+    return delays
+
+
 class BoardTest(unittest.TestCase):
     def test_seed_validates(self):
         rows = sample_rows()
         messages = coordlib.validate_rows(rows)
         self.assertEqual(coordlib.validation_errors_only(messages), [])
         self.assertGreaterEqual(len(rows), 8)
+
+    def test_sample_project_board_validates(self):
+        board = ROOT / "examples" / "sample-project" / "job-board.csv"
+        rows = coordlib.load_board(board)
+        messages = coordlib.validate_rows(rows)
+        self.assertEqual(messages, [])
+        self.assertGreaterEqual(len(rows), 10)
+        self.assertLessEqual(len(rows), 15)
+        self.assertEqual(
+            {row["role"] for row in rows},
+            {"orchestrator", "frontend", "backend", "platform"},
+        )
+        statuses = {row["status"] for row in rows}
+        for status in ("backlog", "ready", "claimed", "in_progress", "review", "done", "needs_human", "dropped"):
+            self.assertIn(status, statuses)
+        env = os.environ.copy()
+        env["HACKATHON_COORD_DIR"] = str(board.parent)
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "board.py"), "validate"],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ok: ", result.stdout)
+        messages_dir = board.parent / "messages"
+        outboxes = [path for path in messages_dir.glob("*.md") if path.name != "README.md"]
+        self.assertGreaterEqual(len(outboxes), 2)
+        for path in outboxes:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("| from ", text)
+            self.assertIn("| to ", text)
+
+    def test_demo_gif_story_and_file(self):
+        check = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "make_demo_gif.py"), "--check"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(check.returncode, 0, check.stderr)
+        data = (ROOT / "docs" / "demo.gif").read_bytes()
+        self.assertTrue(data.startswith(b"GIF8"))
+        self.assertIn(b"NETSCAPE2.0", data)
+        self.assertLess(len(data), 3_000_000)
+        delays = gif_delays_cs(data)
+        self.assertGreaterEqual(len(delays), 8)
+        seconds = sum(delays) / 100
+        self.assertGreaterEqual(seconds, 10)
+        self.assertLessEqual(seconds, 20)
 
     def test_claim_conflict_and_dependency(self):
         rows = sample_rows()

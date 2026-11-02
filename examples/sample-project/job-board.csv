@@ -1,0 +1,15 @@
+﻿id,task,role,owner,status,priority,depends_on,branch,pr,owned_paths,notes,updated
+T-001,"Fill in PROJECT.md: pitch, stack, commands, and the file map",orchestrator,orchestrator,done,P0,,,,PROJECT.md,Pitch locked: a household checks groceries off a shared list.,2026-11-07T09:12:00Z
+T-002,"Write the demo script: sign in, add milk, check it off",orchestrator,orchestrator,done,P0,,,,demo/,Six clicks. Backup if the network fails: the screen recording.,2026-11-07T09:28:00Z
+T-003,Confirm .env.example has SESSION_SECRET and DATABASE_URL,platform,platform,done,P0,,,,.env.example,Dummy values only. No live key.,2026-11-07T09:46:00Z
+T-004,"Cookie session auth: sign-up, sign-in, and sign-out",platform,platform,done,P0,T-003,agent/platform/T-004,https://example.com/pull/3,server/auth/,HttpOnly session cookie. Platform is the auth desk.,2026-11-07T11:08:00Z
+T-005,GET and POST /api/items plus one happy-path test,backend,backend,done,P0,T-003,agent/backend/T-005,https://example.com/pull/4,server/api/,Response shape posted to the frontend outbox.,2026-11-07T11:36:00Z
+T-006,PATCH /api/items/:id to toggle done with a test,backend,backend,review,P0,T-005,agent/backend/T-006,https://example.com/pull/7,server/api/,PR is up. Waiting on the orchestrator.,2026-11-07T14:18:00Z
+T-007,Sign-in screen on a mocked session,frontend,frontend,done,P0,T-002,agent/frontend/T-007,https://example.com/pull/5,web/signin/,Click 1 works with no API.,2026-11-07T11:22:00Z
+T-008,Grocery list screen on mocked items,frontend,frontend,in_progress,P0,T-007,agent/frontend/T-008,,web/list/,Check-off control is in progress.,2026-11-07T14:44:00Z
+T-009,Swap the mock list for the real items API,frontend,,ready,P0,T-005;T-008,,,web/list/,Claim once T-008 is done. Demo screen only.,2026-11-07T12:05:00Z
+T-010,"Seed milk, bread, and eggs for the demo account",backend,,ready,P1,T-005,,,server/seed/,Three rows. Nothing else.,2026-11-07T12:12:00Z
+T-011,Deploy the demo URL and paste it into PROJECT.md,platform,platform,claimed,P0,T-004,,,deploy/,Claimed. Branch not cut yet. Do not demo localhost.,2026-11-07T14:52:00Z
+T-012,Rehearse on the deployed URL and record the freeze,orchestrator,,backlog,P0,T-006;T-009;T-011,,,demo/,Last build task. After this only fix breaks on the click path.,2026-11-07T12:20:00Z
+T-013,Confirm the session cookie domain before deploy,platform,platform,needs_human,P1,T-004,,,server/auth/,HUMAN: need the venue hostname before setting Domain.,2026-11-07T15:06:00Z
+T-014,Dark-mode toggle on the list screen,frontend,,dropped,P2,,,,web/theme/,Cut. Not on the click path.,2026-11-07T13:02:00Z
