@@ -76,6 +76,13 @@ class BoardTest(unittest.TestCase):
             coordlib.set_status(rows, "T-007", "platform", "ready")
         coordlib.set_status(rows, "T-007", "orchestrator", "ready")
 
+    def test_validate_reports_a_dependency_cycle(self):
+        rows = sample_rows()
+        rows[0]["depends_on"] = "T-002"
+        rows[1]["depends_on"] = "T-001"
+        errors = coordlib.validation_errors_only(coordlib.validate_rows(rows))
+        self.assertTrue(any("cycle" in error for error in errors), errors)
+
     def test_claim_is_idempotent_after_start(self):
         rows = sample_rows()
         coordlib.claim(rows, "T-004", "backend")

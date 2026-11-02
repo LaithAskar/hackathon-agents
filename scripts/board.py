@@ -41,10 +41,14 @@ def mutate(args, action):
 def cmd_list(args: argparse.Namespace) -> None:
     coord = coordlib.live_coord_dir()
     reason = coordlib.read_stop(coord)
-    rows = coordlib.load_board(coordlib.board_path(coord))
-    print(f"Board: {coordlib.board_path(coord)}")
     if reason:
         print(f"STOP: {reason}", file=sys.stderr)
+    try:
+        rows = coordlib.load_board(coordlib.board_path(coord))
+    except coordlib.BoardError as err:
+        print(str(err), file=sys.stderr)
+        raise SystemExit(4 if reason and not args.ignore_stop else err.code)
+    print(f"Board: {coordlib.board_path(coord)}")
     text = coordlib.format_board(rows, args.as_agent)
     print(text or "(no tasks)")
     if reason and not args.ignore_stop:
@@ -95,7 +99,9 @@ def cmd_render(args: argparse.Namespace) -> None:
 
 def cmd_claim(args: argparse.Namespace) -> None:
     def action(rows):
-        return coordlib.claim(rows, args.id, args.as_agent)
+        message = coordlib.claim(rows, args.id, args.as_agent)
+        coordlib.append_note(coordlib.require_row(rows, args.id), args.note or "")
+        return message
 
     mutate(args, action)
 
@@ -152,6 +158,8 @@ def cmd_add(args: argparse.Namespace) -> None:
 def cmd_drop_examples(args: argparse.Namespace) -> None:
     if not args.yes:
         raise coordlib.BoardError("Refusing to delete EXAMPLE rows without --yes.")
+    if not coordlib.actor_is_lead(coordlib.require_actor(args.as_agent)):
+        raise coordlib.BoardError("Only the orchestrator, or a human:name, deletes the EXAMPLE rows.")
 
     def action(rows):
         kept = coordlib.drop_examples(rows)

@@ -377,6 +377,9 @@ def validate_rows(rows: list[dict[str, str]]) -> list[str]:
                 errors.append(f"{row.get('id')}: depends_on {dep}, which does not exist.")
             elif dep == row.get("id"):
                 errors.append(f"{row.get('id')}: cannot depend on itself.")
+    cycle = find_cycle({task_id: [d for d in deps_of(row) if d in seen and d != task_id] for task_id, row in seen.items()})
+    if cycle:
+        errors.append(f"{cycle[0]}: depends_on cycle {' -> '.join(cycle)}. No task in it can be claimed.")
     active_paths: list[tuple[str, str]] = []
     for row in rows:
         if row.get("status") not in ACTIVE:
@@ -392,6 +395,29 @@ def validate_rows(rows: list[dict[str, str]]) -> list[str]:
                     f"warning: {left_id} and {right_id} both cover '{left}' / '{right}'."
                 )
     return errors + warnings
+
+
+def find_cycle(graph: dict[str, list[str]]) -> list[str] | None:
+    state: dict[str, str] = {}
+
+    def visit(node: str, path: list[str]) -> list[str] | None:
+        state[node] = "open"
+        for dep in graph.get(node, []):
+            if state.get(dep) == "open":
+                return path[path.index(dep):] + [dep]
+            if dep not in state:
+                found = visit(dep, path + [dep])
+                if found:
+                    return found
+        state[node] = "closed"
+        return None
+
+    for node in graph:
+        if node not in state:
+            found = visit(node, [node])
+            if found:
+                return found
+    return None
 
 
 def validation_errors_only(messages: list[str]) -> list[str]:

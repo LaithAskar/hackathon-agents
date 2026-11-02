@@ -28,10 +28,15 @@ Every task:
 - Depends on real ids when order matters. Do not leave a hidden order in someone's head.
 
 ```bash
+python3 scripts/board.py add --as orchestrator --role platform --priority P0 \
+  --paths ".env.example" --status ready \
+  --task "List every key the demo needs in .env.example with dummy values."
 python3 scripts/board.py add --as orchestrator --role backend --priority P0 \
-  --paths "server/" --depends-on T-003 --status ready \
+  --paths "server/" --depends-on T-001 --status ready \
   --task "GET /api/items returns the sample list. One test. Post the JSON shape to frontend."
 ```
+
+After `drop-examples` the board is empty, so the first new task is `T-001`. Use the id that `add` printed.
 
 Keep at most one `in_progress` task per desk. A second claim is how the same agent starts conflicting with itself.
 
