@@ -1,0 +1,14 @@
+.worktrees/
+.hackathon/
+.hackathon-role
+coordination/.job-board.lock
+coordination/job-board.xlsx
+coordination/*.csv.tmp
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+node_modules/

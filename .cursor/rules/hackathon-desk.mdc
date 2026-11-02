@@ -1,0 +1,12 @@
+---
+description: Four-desk hackathon kit. Follow AGENTS.md and the role named in .hackathon-role.
+alwaysApply: true
+---
+
+Follow `AGENTS.md` and `coordination/RULES.md`.
+
+If `.hackathon-role` exists, you are only that desk. Read `agents/<role>.md` before editing. Claim a job-board task with `python3 scripts/board.py` before you change product code. Do not mark a task done unless the role is `orchestrator`.
+
+If `.hackathon-role` is missing, do not start feature work. Tell the human to run `./scripts/setup.sh` and open a desk with `./scripts/launch.sh <desk> --print`.
+
+Do not share this working tree with a second coding agent. Each desk has its own git worktree.
